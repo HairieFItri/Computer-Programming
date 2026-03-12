@@ -1,4 +1,5 @@
 import streamlit as st
+import pd as pd
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,7 +11,6 @@ from streamlit_folium import folium_static
 from pyproj import Transformer
 
 # ================== DATA PENGGUNA ==================
-# Tambah user di sini
 USERS = {
     "HarryFitri": "1",
     "AlipKamal": "2",
@@ -34,7 +34,6 @@ def reset_password_dialog():
     
     if st.button("Simpan Kata Laluan", use_container_width=True):
         if id_sah in USERS and pass_baru == pass_sah and pass_baru != "":
-            # Nota: Perubahan ini hanya sementara dalam sesi ini
             USERS[id_sah] = pass_baru 
             st.success(f"✅ Kata laluan {id_sah} berjaya dikemaskini!")
             st.rerun()
@@ -51,7 +50,6 @@ def check_password():
             st.markdown("<br>", unsafe_allow_html=True)
             
             if st.button("Log Masuk", use_container_width=True):
-                # Semak jika user_id wujud dalam USERS dan password betul
                 if user_id in USERS and USERS[user_id] == password:
                     st.session_state["password_correct"] = True
                     st.session_state["current_user"] = user_id
@@ -67,7 +65,6 @@ def check_password():
 # ================== MAIN APP (SELEPAS LOGIN) ==================
 if check_password():
     
-    # --- 👤 PROFIL PENGGUNA (Dinamik) ---
     current_user = st.session_state.get("current_user", "User")
     
     st.sidebar.markdown(
@@ -80,13 +77,11 @@ if check_password():
         """, unsafe_allow_html=True
     )
     
-    # Butang Log Keluar
     if st.sidebar.button("🚪 Log Keluar", use_container_width=True):
         del st.session_state["password_correct"]
         del st.session_state["current_user"]
         st.rerun()
 
-    # --- HEADER ---
     col_logo, col_text = st.columns([1.2, 4])
     with col_logo:
         if os.path.exists("Poli_Logo.png"):
@@ -108,7 +103,7 @@ if check_password():
     
     st.markdown("<hr style='border: 1px solid #eee; margin-top: 0px;'>", unsafe_allow_html=True)
 
-    # ================== SIDEBAR SETTINGS ==================
+    # --- SIDEBAR SETTINGS ---
     st.sidebar.header("⚙️ Tetapan Paparan")
     uploaded_file = st.sidebar.file_uploader("Upload fail CSV", type=["csv"])
 
@@ -152,7 +147,6 @@ if check_password():
                 centroid_ll = poly_ll.centroid
                 area = poly_geom.area
 
-                # --- Ringkasan ---
                 st.markdown("### 📊 Ringkasan Lot")
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Luas (m²)", f"{area:.2f}")
@@ -164,19 +158,22 @@ if check_password():
                 st.subheader("📐 Paparan Pelan Ukur")
 
                 if show_interactive_map:
-                    # --- INTERAKTIF ---
                     google_map_url = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}' if map_provider == "Satelit (Hybrid)" else 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'
                     m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=20, max_zoom=22, tiles=google_map_url, attr='Google')
                     
+                    # --- TOOLTIP LOT ---
+                    lot_info = f"<b>LOT INFO</b><br>Luas: {area:.2f} m²<br>Ekar: {area/4046.856:.4f}"
+                    
                     folium.Polygon(
                         locations=[[r['lat'], r['lon']] for _, r in df.iterrows()],
-                        color=line_color, weight=3, fill=True, fill_color=poly_color, fill_opacity=poly_opacity
+                        color=line_color, weight=3, fill=True, fill_color=poly_color, fill_opacity=poly_opacity,
+                        tooltip=folium.Tooltip(lot_info) # <--- Hover kat Lot
                     ).add_to(m)
 
                     if show_luas_label:
                         folium.Marker(
                             [centroid_ll.y, centroid_ll.x],
-                            icon=folium.DivIcon(html=f'''<div style="font-size: {label_size_luas}pt; color: white; text-shadow: 2px 2px 4px black; font-weight: bold; width: 200px; text-align: center; margin-left: -100px;">{area:.2f} m²</div>''')
+                            icon=folium.DivIcon(html=f'''<div style="font-size: {label_size_luas}pt; color: white; text-shadow: 2px 2px 4px black; font-weight: bold; width: 200px; text-align: center; margin-left: -100px; pointer-events: none;">{area:.2f} m²</div>''')
                         ).add_to(m)
                     
                     for i in range(len(df)):
@@ -188,19 +185,24 @@ if check_password():
                             mid_lat, mid_lon = (p1['lat'] + p2['lat']) / 2, (p1['lon'] + p2['lon']) / 2
                             folium.Marker(
                                 [mid_lat, mid_lon],
-                                icon=folium.DivIcon(html=f'''<div style="text-align: center; width: 150px; margin-left: -75px;">
+                                icon=folium.DivIcon(html=f'''<div style="text-align: center; width: 150px; margin-left: -75px; pointer-events: none;">
                                     <div style="font-size: {label_size_data}pt; color: white; text-shadow: 2px 2px 3px black; font-weight: bold;">
                                     {format_dms(bear)}<br>{dist:.2f}m</div></div>''')
                             ).add_to(m)
 
+                        # --- TOOLTIP BATU SEMPADAN ---
+                        stn_info = f"<b>STN {int(p1['STN'])}</b><br>E: {p1['E']:.3f}<br>N: {p1['N']:.3f}"
+                        
                         folium.Marker(
                             [p1['lat'], p1['lon']],
+                            tooltip=folium.Tooltip(stn_info), # <--- Hover kat Batu
                             icon=folium.DivIcon(html=f'''<div style="background-color: white; border: 2px solid red; border-radius: 50%; width: {label_size_stn}px; height: {label_size_stn}px; display: flex; align-items: center; justify-content: center; font-size: {label_size_stn*0.6}px; font-weight: bold; color: black; margin-left: -{label_size_stn/2}px; margin-top: -{label_size_stn/2}px; box-shadow: 1px 1px 3px black;">{int(p1["STN"])}</div>''')
                         ).add_to(m)
+
                     folium_static(m, width=900, height=550)
 
                 else:
-                    # --- MATPLOTLIB ---
+                    # --- MATPLOTLIB (Static) ---
                     fig, ax = plt.subplots(figsize=(10, 8))
                     bg_color = "#121212" if plot_theme == "Dark Mode" else ("#003366" if plot_theme == "Blueprint" else "#ffffff")
                     grid_color = "#555555" if plot_theme == "Dark Mode" else ("#004080" if plot_theme == "Blueprint" else "#aaaaaa")

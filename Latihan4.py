@@ -121,7 +121,7 @@ if check_password():
             df = pd.read_csv(uploaded_file)
             
             if all(col in df.columns for col in ['STN', 'E', 'N']):
-                # Transformasi ke WGS84 untuk QGIS & Folium
+                # Transformasi ke WGS84
                 transformer = Transformer.from_crs("EPSG:4390", "EPSG:4326", always_xy=True)
                 df['lon'], df['lat'] = transformer.transform(df['E'].values, df['N'].values)
                 
@@ -138,8 +138,6 @@ if check_password():
                 st.sidebar.subheader("💾 Eksport Data Lengkap")
                 
                 features = []
-                
-                # 1. Feature Poligon (Keluasan)
                 features.append({
                     "type": "Feature",
                     "geometry": mapping(poly_ll),
@@ -151,16 +149,11 @@ if check_password():
                     }
                 })
                 
-                # 2. Feature Lines (Bearing & Jarak)
                 for i in range(len(df)):
-                    p1 = df.iloc[i]
-                    p2 = df.iloc[(i + 1) % len(df)]
-                    
+                    p1, p2 = df.iloc[i], df.iloc[(i + 1) % len(df)]
                     line_segment = LineString([(p1['lon'], p1['lat']), (p2['lon'], p2['lat'])])
                     dE, dN = p2['E'] - p1['E'], p2['N'] - p1['N']
-                    dist = np.sqrt(dE**2 + dN**2)
-                    bear = (np.degrees(np.arctan2(dE, dN)) + 360) % 360
-                    
+                    dist, bear = np.sqrt(dE**2 + dN**2), (np.degrees(np.arctan2(dE, dN)) + 360) % 360
                     features.append({
                         "type": "Feature",
                         "geometry": mapping(line_segment),
@@ -174,7 +167,6 @@ if check_password():
                         }
                     })
                 
-                # 3. Feature Points (Batu Sempadan)
                 for _, row in df.iterrows():
                     point_geom = Point(row['lon'], row['lat'])
                     features.append({
@@ -190,7 +182,6 @@ if check_password():
                     })
 
                 geojson_full = {"type": "FeatureCollection", "features": features}
-                
                 st.sidebar.download_button(
                     label="🚀 Download QGIS GeoJSON",
                     data=json.dumps(geojson_full, indent=4),
@@ -211,7 +202,7 @@ if check_password():
                 st.subheader("📐 Paparan Pelan Ukur")
 
                 if show_interactive_map:
-                    # --- MOD PETA INTERAKTIF ---
+                    # --- MOD PETA INTERAKTIF (FOLIUM) ---
                     google_map_url = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}' if map_provider == "Satelit (Hybrid)" else 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'
                     m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=20, max_zoom=22, tiles=google_map_url, attr='Google')
                     
@@ -223,13 +214,29 @@ if check_password():
                         dE, dN = p2['E'] - p1['E'], p2['N'] - p1['N']
                         dist, bear = np.sqrt(dE**2 + dN**2), (np.degrees(np.arctan2(dE, dN)) + 360) % 360
                         
+                        # --- TAMBAH LABEL BEARING & JARAK (PETA) ---
+                        mid_lat, mid_lon = (p1['lat'] + p2['lat']) / 2, (p1['lon'] + p2['lon']) / 2
+                        angle = -np.degrees(np.arctan2(p2['lat'] - p1['lat'], p2['lon'] - p1['lon']))
+                        if angle > 90: angle -= 180
+                        elif angle < -90: angle += 180
+                        
+                        folium.Marker(
+                            [mid_lat, mid_lon],
+                            icon=folium.DivIcon(html=f'''<div style="transform: rotate({angle}deg); text-align: center; width: 150px; margin-left: -75px;">
+                                <div style="font-size: {label_size_data}pt; color: white; text-shadow: 2px 2px 3px black; font-weight: bold;">
+                                {format_dms(bear)}<br>{dist:.2f}m</div></div>''')
+                        ).add_to(m)
+
                         # Label Stesen
-                        folium.Marker([p1['lat'], p1['lon']], icon=folium.DivIcon(html=f'''<div style="background-color: white; border: 2px solid red; border-radius: 50%; width: {label_size_stn}px; height: {label_size_stn}px; display: flex; align-items: center; justify-content: center; font-size: {label_size_stn*0.6}px; font-weight: bold; color: black; margin-left: -{label_size_stn/2}px; margin-top: -{label_size_stn/2}px;">{int(p1["STN"])}</div>''')).add_to(m)
+                        folium.Marker([p1['lat'], p1['lon']], icon=folium.DivIcon(html=f'''<div style="background-color: white; border: 2px solid red; border-radius: 50%; width: {label_size_stn}px; height: {label_size_stn}px; display: flex; align-items: center; justify-content: center; font-size: {label_size_stn*0.6}px; font-weight: bold; color: black; margin-left: -{label_size_stn/2}px; margin-top: -{label_size_stn/2}px; box-shadow: 1px 1px 3px black;">{int(p1["STN"])}</div>''')).add_to(m)
+
+                    if show_luas_label:
+                        folium.Marker([df['lat'].mean(), df['lon'].mean()], icon=folium.DivIcon(html=f'<div style="font-size: {label_size_luas}pt; color: #00FF00; text-shadow: 3px 3px 5px black; font-weight: 900; width: 250px; text-align: center; margin-left: -125px;">{area:.2f} m²</div>')).add_to(m)
 
                     folium_static(m, width=900, height=550)
 
                 else:
-                    # --- MOD MATPLOTLIB ---
+                    # --- MOD MATPLOTLIB (STATIC) ---
                     if plot_theme == "Dark Mode": bg_color, grid_color = "#121212", "#555555"
                     elif plot_theme == "Blueprint": bg_color, grid_color = "#003366", "#004080"
                     else: bg_color, grid_color = "#ffffff", "#aaaaaa"
@@ -245,15 +252,22 @@ if check_password():
                         ax.yaxis.set_major_locator(plt.MultipleLocator(grid_interval))
                     else: ax.axis('off')
 
+                    if show_luas_label:
+                        ax.text(centroid_m.x, centroid_m.y, f"{area:.2f} m²", fontsize=label_size_luas, fontweight='bold', color='darkgreen', ha='center', bbox=dict(boxstyle='round,pad=0.3', fc='white', alpha=0.9, ec='green'), zorder=10)
+
                     for i in range(len(df)):
                         p1, p2 = df.iloc[i], df.iloc[(i + 1) % len(df)]
                         dE, dN = p2['E'] - p1['E'], p2['N'] - p1['N']
                         dist, bear = np.sqrt(dE**2 + dN**2), (np.degrees(np.arctan2(dE, dN)) + 360) % 360
+                        
+                        # --- TAMBAH LABEL BEARING & JARAK (STATIC) ---
                         txt_angle = np.degrees(np.arctan2(dN, dE))
                         if txt_angle > 90: txt_angle -= 180
                         elif txt_angle < -90: txt_angle += 180
                         
-                        ax.text((p1['E']+p2['E'])/2, (p1['N']+p2['N'])/2, f"{format_dms(bear)}\n{dist:.2f}m", fontsize=label_size_data, color='brown', fontweight='bold', ha='center', rotation=txt_angle)
+                        ax.text((p1['E']+p2['E'])/2, (p1['N']+p2['N'])/2, f"{format_dms(bear)}\n{dist:.2f}m", 
+                                fontsize=label_size_data, color='brown', fontweight='bold', ha='center', rotation=txt_angle)
+                        
                         ax.scatter(p1['E'], p1['N'], color='white', edgecolor='red', s=300, zorder=5)
                         ax.text(p1['E'], p1['N'], str(int(p1['STN'])), fontsize=label_size_stn/2, color='black', fontweight='bold', ha='center', va='center', zorder=6)
 
